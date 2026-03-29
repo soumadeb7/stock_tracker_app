@@ -1,13 +1,20 @@
 import Link from "next/link";
 import Image from "next/image";
-import {auth} from "@/lib/better-auth/auth";
-import {headers} from "next/headers";
-import {redirect} from "next/navigation";
+import { auth } from "@/lib/better-auth/auth";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 
-const Layout = async ({ children }: { children : React.ReactNode }) => {
-    const session = await auth.api.getSession({ headers: await headers() })
-
-    if(session?.user) redirect('/')
+const Layout = async ({ children }: { children: React.ReactNode }) => {
+    try {
+        const session = await auth.api.getSession({ headers: await headers() })
+        if (session?.user) redirect('/')
+    } catch (error: any) {
+        // Don't catch redirect errors - they should propagate
+        if (error?.digest?.includes('NEXT_REDIRECT')) {
+            throw error;
+        }
+        console.log('Auth layout - session check failed:', error)
+    }
 
     return (
         <main className="auth-layout">
