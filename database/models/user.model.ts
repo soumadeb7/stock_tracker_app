@@ -27,8 +27,9 @@ const UserSchema = new Schema<UserDocument>(
         riskTolerance: { type: String },
         preferredIndustry: { type: String },
     },
-    { timestamps: true }
+    { timestamps: true, collection: 'user' }
 );
 
-export const User: Model<UserDocument> =
-    (models?.user as Model<UserDocument>) || model<UserDocument>('user', UserSchema);
+export const User: Model<UserDocument> = (
+    models.user || model<UserDocument>('user', UserSchema)
+) as Model<UserDocument>;
