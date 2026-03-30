@@ -7,12 +7,23 @@ import SelectField from "@/components/forms/SelectField";
 import { INVESTMENT_GOALS, PREFERRED_INDUSTRIES, RISK_TOLERANCE_OPTIONS } from "@/lib/constants";
 import { CountrySelectField } from "@/components/forms/CountrySelectField";
 import FooterLink from "@/components/forms/FooterLink";
-import { signUpWithEmail } from "@/lib/actions/auth.actions";
 import { useRouter } from "next/navigation";
+import { useSession } from "@/lib/better-auth/client";
 import { toast } from "sonner";
+import { useEffect, useState } from "react";
 
 const SignUp = () => {
     const router = useRouter()
+    const { data: session, isPending } = useSession();
+    const [isLoading, setIsLoading] = useState(false);
+
+    // Redirect to home if already logged in
+    useEffect(() => {
+        if (!isPending && session?.user) {
+            router.push('/');
+        }
+    }, [session, isPending, router]);
+
     const {
         register,
         handleSubmit,
@@ -33,21 +44,77 @@ const SignUp = () => {
 
     const onSubmit = async (data: SignUpFormData) => {
         try {
-            const result = await signUpWithEmail(data);
-            if (result.success) {
-                router.push('/');
-                return;
+            setIsLoading(true);
+
+            // Sign up via HTTP call to better-auth endpoint
+            const response = await fetch('/api/auth/sign-up/email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include', // Important: include cookies
+                body: JSON.stringify({
+                    email: data.email,
+                    password: data.password,
+                    name: data.fullName,
+                })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok || !result.user) {
+                throw new Error(result.error?.message || result.message || 'Sign up failed');
             }
 
-            toast.error('Sign up failed', {
-                description: result.error || 'Failed to create an account.'
-            })
+            console.log('✅ Sign up successful, saving profile...');
+
+            // Save additional profile data
+            try {
+                const profileRes = await fetch('/api/auth/save-profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        country: data.country,
+                        investmentGoals: data.investmentGoals,
+                        riskTolerance: data.riskTolerance,
+                        preferredIndustry: data.preferredIndustry
+                    })
+                });
+
+                if (profileRes.ok) {
+                    console.log('✅ Profile saved successfully');
+                } else {
+                    console.warn('⚠️ Failed to save profile, but user was created');
+                }
+            } catch (e) {
+                console.error('⚠️ Failed to save profile:', e);
+            }
+
+            toast.success('Account created successfully!');
+            console.log('🔄 Redirecting to home...');
+
+            // Do a full page reload to ensure cookies are picked up
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 500);
         } catch (e) {
-            console.error(e);
-            toast.error('Sign up failed', {
-                description: e instanceof Error ? e.message : 'Failed to create an account.'
-            })
+            console.error('❌ Sign up error:', e);
+            const message = e instanceof Error ? e.message : 'Failed to create an account.';
+            toast.error('Sign up failed', { description: message });
+        } finally {
+            setIsLoading(false);
         }
+    }
+
+    // Show loading state while checking authentication
+    if (isPending) {
+        return (
+            <div className="flex items-center justify-center min-h-screen">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500 mx-auto mb-4"></div>
+                    <p className="text-gray-600 dark:text-gray-400">Loading...</p>
+                </div>
+            </div>
+        );
     }
 
     return (
@@ -121,8 +188,8 @@ const SignUp = () => {
                     required
                 />
 
-                <Button type="submit" disabled={isSubmitting} className="yellow-btn w-full mt-5">
-                    {isSubmitting ? 'Creating Account' : 'Start Your Investing Journey'}
+                <Button type="submit" disabled={isSubmitting || isLoading} className="yellow-btn w-full mt-5">
+                    {isSubmitting || isLoading ? 'Creating Account' : 'Start Your Investing Journey'}
                 </Button>
 
                 <FooterLink text="Already have an account?" linkText="Sign in" href="/sign-in" />
