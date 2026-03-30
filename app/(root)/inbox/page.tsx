@@ -1,164 +1,140 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSession } from '@/lib/better-auth/client';
+import { useRouter } from 'next/navigation';
 import { NewsInboxDisplay } from '@/components/NewsInboxDisplay';
-import { redirect } from 'next/navigation';
 
-interface NewsInboxItem {
+type InboxItem = {
     _id: string;
-    userId: string;
-    userEmail: string;
     date: string;
     newsArticles: Array<{
         headline: string;
         summary: string;
         source: string;
         url: string;
-        datetime?: number;
+        datetime: number;
         symbol?: string;
         image?: string;
     }>;
-    newsContent: string;
-    read: boolean;
-    createdAt: string;
-    updatedAt: string;
-}
+    newsContent?: string;
+    read?: boolean;
+};
 
 export default function InboxPage() {
     const { data: session, isPending } = useSession();
-    const [inboxItems, setInboxItems] = useState<NewsInboxItem[]>([]);
+    const router = useRouter();
+    const [items, setItems] = useState<InboxItem[]>([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const [error, setError] = useState<string>('');
 
     useEffect(() => {
-        if (!isPending && !session) {
-            redirect('/sign-in');
+        if (!isPending && !session?.user) {
+            router.push('/sign-in');
         }
-    }, [session, isPending]);
+    }, [isPending, session, router]);
 
     useEffect(() => {
-        const fetchInbox = async () => {
+        const loadInbox = async () => {
+            if (!session?.user) return;
+
+            setLoading(true);
+            setError('');
+
             try {
-                setLoading(true);
+                await fetch('/api/inbox/create-test-data', {
+                    method: 'GET',
+                    credentials: 'include',
+                });
 
-                // First, ensure test data exists for today
-                try {
-                    await fetch('/api/inbox/create-test-data');
-                } catch (e) {
-                    console.warn('Could not create test data:', e);
+                const res = await fetch('/api/inbox', {
+                    method: 'GET',
+                    credentials: 'include',
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data?.error || 'Failed to fetch inbox');
                 }
 
-                // Now fetch inbox
-                const response = await fetch('/api/inbox');
-
-                if (!response.ok) {
-                    throw new Error('Failed to fetch inbox');
-                }
-
-                const data = await response.json();
-                setInboxItems(data.items || []);
-            } catch (err) {
-                setError(err instanceof Error ? err.message : 'An error occurred');
+                setItems(Array.isArray(data?.items) ? data.items : []);
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : 'Failed to load inbox';
+                setError(msg);
             } finally {
                 setLoading(false);
             }
         };
 
-        if (session?.user) {
-            fetchInbox();
+        if (!isPending && session?.user) {
+            loadInbox();
         }
-    }, [session?.user]);
+    }, [isPending, session]);
+
+    const stats = useMemo(() => {
+        const summaries = items.length;
+        const articles = items.reduce((acc, item) => acc + (item.newsArticles?.length || 0), 0);
+        const unread = items.filter((item) => !item.read).length;
+        return { summaries, articles, unread };
+    }, [items]);
 
     if (isPending || loading) {
         return (
-            <div className="min-h-screen bg-gray-50 dark:bg-slate-950 py-12 px-4">
-                <div className="max-w-4xl mx-auto">
-                    <div className="flex items-center justify-center h-64">
-                        <div className="text-center">
-                            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                            <p className="text-gray-600 dark:text-gray-400">Loading your inbox...</p>
-                        </div>
-                    </div>
-                </div>
+            <div className="flex items-center justify-center py-16">
+                <p className="text-gray-500">Loading inbox...</p>
             </div>
         );
     }
 
+    if (!session?.user) return null;
+
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-slate-950 py-8 px-4">
-            <div className="max-w-4xl mx-auto">
-                {/* Header */}
-                <div className="mb-8">
-                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                        📬 Your News Inbox
-                    </h1>
-                    <p className="text-gray-600 dark:text-gray-400 mt-2">
-                        Personalized daily market summaries based on your watchlist
-                    </p>
-                </div>
-
-                {/* Error State */}
-                {error && (
-                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6">
-                        <p className="text-red-600 dark:text-red-400 text-sm">
-                            {error}
-                        </p>
-                    </div>
-                )}
-
-                {/* Empty State */}
-                {inboxItems.length === 0 ? (
-                    <div className="bg-white dark:bg-slate-900 rounded-lg shadow-md p-12 text-center">
-                        <div className="text-gray-400 dark:text-gray-600 text-5xl mb-4">📭</div>
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                            No news summaries yet
-                        </h3>
-                        <p className="text-gray-600 dark:text-gray-400 mb-6">
-                            Daily news summaries will appear here each day at 12:00 PM UTC based on your watchlist.
-                        </p>
-                        <p className="text-sm text-gray-500 dark:text-gray-500">
-                            💡 Tip: Add stocks to your watchlist to get personalized news summaries!
-                        </p>
-                    </div>
-                ) : (
-                    <div>
-                        {/* Summary Stats */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                            <div className="bg-white dark:bg-slate-900 rounded-lg shadow p-4">
-                                <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
-                                    {inboxItems.length}
-                                </div>
-                                <p className="text-gray-600 dark:text-gray-400 text-sm">News Summaries</p>
-                            </div>
-                            <div className="bg-white dark:bg-slate-900 rounded-lg shadow p-4">
-                                <div className="text-3xl font-bold text-green-600 dark:text-green-400">
-                                    {inboxItems.reduce((acc, item) => acc + (item.newsArticles?.length || 0), 0)}
-                                </div>
-                                <p className="text-gray-600 dark:text-gray-400 text-sm">Total Articles</p>
-                            </div>
-                            <div className="bg-white dark:bg-slate-900 rounded-lg shadow p-4">
-                                <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">
-                                    {inboxItems.filter(item => !item.read).length}
-                                </div>
-                                <p className="text-gray-600 dark:text-gray-400 text-sm">Unread</p>
-                            </div>
-                        </div>
-
-                        {/* Inbox Items */}
-                        <div>
-                            {inboxItems.map((item) => (
-                                <NewsInboxDisplay
-                                    key={item._id}
-                                    date={item.date}
-                                    articles={item.newsArticles || []}
-                                    newsContent={item.newsContent}
-                                />
-                            ))}
-                        </div>
-                    </div>
-                )}
+        <section className="max-w-5xl mx-auto w-full">
+            <div className="mb-6">
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Inbox</h1>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    Daily market summaries and related articles.
+                </p>
             </div>
-        </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+                <div className="rounded-lg border border-gray-200 dark:border-slate-700 p-4 bg-white dark:bg-slate-900">
+                    <p className="text-xs text-gray-500">Summaries</p>
+                    <p className="text-xl font-semibold text-gray-900 dark:text-white">{stats.summaries}</p>
+                </div>
+                <div className="rounded-lg border border-gray-200 dark:border-slate-700 p-4 bg-white dark:bg-slate-900">
+                    <p className="text-xs text-gray-500">Articles</p>
+                    <p className="text-xl font-semibold text-gray-900 dark:text-white">{stats.articles}</p>
+                </div>
+                <div className="rounded-lg border border-gray-200 dark:border-slate-700 p-4 bg-white dark:bg-slate-900">
+                    <p className="text-xs text-gray-500">Unread</p>
+                    <p className="text-xl font-semibold text-gray-900 dark:text-white">{stats.unread}</p>
+                </div>
+            </div>
+
+            {error ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 p-4 mb-6">
+                    <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+                </div>
+            ) : null}
+
+            {items.length === 0 ? (
+                <div className="rounded-lg border border-gray-200 dark:border-slate-700 p-8 text-center bg-white dark:bg-slate-900">
+                    <p className="text-gray-600 dark:text-gray-400">No inbox items yet for your account.</p>
+                </div>
+            ) : (
+                <div>
+                    {items.map((item) => (
+                        <NewsInboxDisplay
+                            key={item._id}
+                            date={item.date}
+                            articles={item.newsArticles || []}
+                            newsContent={item.newsContent}
+                        />
+                    ))}
+                </div>
+            )}
+        </section>
     );
 }

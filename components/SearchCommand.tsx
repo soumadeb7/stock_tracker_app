@@ -1,13 +1,46 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { CommandDialog, CommandEmpty, CommandInput, CommandList } from "@/components/ui/command"
 import { Button } from "@/components/ui/button";
 import { Loader2, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { searchStocks } from "@/lib/actions/finnhub.actions";
-import { useDebounce } from "@/hooks/useDebounce";
 import type { SearchCommandProps, StockWithWatchlistStatus } from "@/lib/types";
+
+const MIN_SEARCH_LENGTH = 2;
+
+const rankStocks = (items: StockWithWatchlistStatus[], rawQuery: string): StockWithWatchlistStatus[] => {
+    const query = rawQuery.trim().toLowerCase();
+    if (!query) return items;
+
+    const uniqueBySymbol = new Map<string, StockWithWatchlistStatus>();
+    for (const item of items) {
+        uniqueBySymbol.set(item.symbol, item);
+    }
+
+    return [...uniqueBySymbol.values()].sort((a, b) => {
+        const aSymbol = a.symbol.toLowerCase();
+        const bSymbol = b.symbol.toLowerCase();
+        const aName = a.name.toLowerCase();
+        const bName = b.name.toLowerCase();
+
+        const score = (symbol: string, name: string) => {
+            if (symbol === query) return 0;
+            if (symbol.startsWith(query)) return 1;
+            if (name.startsWith(query)) return 2;
+            if (symbol.includes(query)) return 3;
+            if (name.includes(query)) return 4;
+            return 5;
+        };
+
+        const scoreA = score(aSymbol, aName);
+        const scoreB = score(bSymbol, bName);
+
+        if (scoreA !== scoreB) return scoreA - scoreB;
+        return a.symbol.localeCompare(b.symbol);
+    });
+};
 
 export default function SearchCommand({ renderAs = 'button', label = 'Add stock', initialStocks }: SearchCommandProps) {
     const fallbackStocks = initialStocks ?? [];
@@ -15,8 +48,12 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
     const [searchTerm, setSearchTerm] = useState("")
     const [loading, setLoading] = useState(false)
     const [stocks, setStocks] = useState<StockWithWatchlistStatus[]>(fallbackStocks);
+    const searchRequestRef = useRef(0);
+    const lastQueryRef = useRef("");
 
-    const isSearchMode = !!searchTerm.trim();
+    const normalizedQuery = searchTerm.trim().toLowerCase();
+    const isSearchMode = normalizedQuery.length > 0;
+    const hasEnoughChars = normalizedQuery.length >= MIN_SEARCH_LENGTH;
     const displayStocks = isSearchMode ? stocks : stocks?.slice(0, 10);
 
     useEffect(() => {
@@ -30,30 +67,59 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
         return () => window.removeEventListener("keydown", onKeyDown)
     }, [])
 
-    const handleSearch = async () => {
-        if (!isSearchMode) return setStocks(fallbackStocks);
-
-        setLoading(true)
-        try {
-            const results = await searchStocks(searchTerm.trim());
-            setStocks(results);
-        } catch {
-            setStocks([])
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    const debouncedSearch = useDebounce(handleSearch, 300);
-
     useEffect(() => {
-        debouncedSearch();
-    }, [searchTerm]);
+        if (!open) return;
+
+        const query = normalizedQuery;
+
+        // Show fallback/popular stocks when query is empty.
+        if (!query) {
+            lastQueryRef.current = "";
+            setLoading(false);
+            setStocks(fallbackStocks);
+            return;
+        }
+
+        // Keep UI clear for very short queries.
+        if (query.length < MIN_SEARCH_LENGTH) {
+            setLoading(false);
+            setStocks([]);
+            return;
+        }
+
+        const timeoutId = setTimeout(async () => {
+            if (query === lastQueryRef.current) return;
+
+            const requestId = ++searchRequestRef.current;
+            setLoading(true);
+
+            try {
+                const results = await searchStocks(query);
+
+                // Ignore stale responses from older requests.
+                if (requestId !== searchRequestRef.current) return;
+
+                lastQueryRef.current = query;
+                setStocks(rankStocks(results, query));
+            } catch {
+                if (requestId !== searchRequestRef.current) return;
+                setStocks([]);
+            } finally {
+                if (requestId === searchRequestRef.current) {
+                    setLoading(false);
+                }
+            }
+        }, 300);
+
+        return () => clearTimeout(timeoutId);
+    }, [normalizedQuery, open, fallbackStocks]);
+
 
     const handleSelectStock = () => {
         setOpen(false);
         setSearchTerm("");
         setStocks(fallbackStocks);
+        lastQueryRef.current = "";
     }
 
     return (
@@ -75,6 +141,10 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
                 <CommandList className="search-list">
                     {loading ? (
                         <CommandEmpty className="search-list-empty">Loading stocks...</CommandEmpty>
+                    ) : isSearchMode && !hasEnoughChars ? (
+                        <div className="search-list-indicator">
+                            Type at least {MIN_SEARCH_LENGTH} characters to search
+                        </div>
                     ) : displayStocks?.length === 0 ? (
                         <div className="search-list-indicator">
                             {isSearchMode ? 'No results found' : 'No stocks available'}

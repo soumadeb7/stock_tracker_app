@@ -1,5 +1,5 @@
 "use client";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { WatchlistButtonProps } from "@/lib/types";
 
 // Minimal WatchlistButton implementation to satisfy page requirements.
@@ -15,16 +15,77 @@ const WatchlistButton = ({
     onWatchlistChange,
 }: WatchlistButtonProps) => {
     const [added, setAdded] = useState<boolean>(!!isInWatchlist);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        setAdded(!!isInWatchlist);
+    }, [isInWatchlist]);
+
+    useEffect(() => {
+        let active = true;
+
+        const loadWatchlistStatus = async () => {
+            try {
+                const res = await fetch(`/api/watchlist/${encodeURIComponent(symbol)}`, {
+                    method: "GET",
+                    credentials: "include",
+                });
+
+                if (!res.ok) return;
+
+                const data = await res.json();
+                if (active && typeof data?.isInWatchlist === "boolean") {
+                    setAdded(data.isInWatchlist);
+                }
+            } catch {
+                // Keep current UI state if status fetch fails.
+            }
+        };
+
+        loadWatchlistStatus();
+
+        return () => {
+            active = false;
+        };
+    }, [symbol]);
 
     const label = useMemo(() => {
         if (type === "icon") return added ? "" : "";
         return added ? "Remove from Watchlist" : "Add to Watchlist";
     }, [added, type]);
 
-    const handleClick = () => {
+    const handleClick = async () => {
+        if (loading) return;
+
         const next = !added;
-        setAdded(next);
-        onWatchlistChange?.(symbol, next);
+        setLoading(true);
+
+        try {
+            if (next) {
+                const res = await fetch("/api/watchlist", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({ symbol, company }),
+                });
+
+                if (!res.ok) throw new Error("Failed to add stock to watchlist");
+            } else {
+                const res = await fetch(`/api/watchlist/${encodeURIComponent(symbol)}`, {
+                    method: "DELETE",
+                    credentials: "include",
+                });
+
+                if (!res.ok) throw new Error("Failed to remove stock from watchlist");
+            }
+
+            setAdded(next);
+            onWatchlistChange?.(symbol, next);
+        } catch {
+            // Keep previous state when request fails.
+        } finally {
+            setLoading(false);
+        }
     };
 
     if (type === "icon") {
@@ -34,6 +95,7 @@ const WatchlistButton = ({
                 aria-label={added ? `Remove ${symbol} from watchlist` : `Add ${symbol} to watchlist`}
                 className={`watchlist-icon-btn ${added ? "watchlist-icon-added" : ""}`}
                 onClick={handleClick}
+                disabled={loading}
             >
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -54,7 +116,7 @@ const WatchlistButton = ({
     }
 
     return (
-        <button className={`watchlist-btn ${added ? "watchlist-remove" : ""}`} onClick={handleClick}>
+        <button className={`watchlist-btn ${added ? "watchlist-remove" : ""}`} onClick={handleClick} disabled={loading}>
             {showTrashIcon && added ? (
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
