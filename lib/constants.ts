@@ -1,6 +1,7 @@
 export const NAV_ITEMS = [
     { href: '/', label: 'Dashboard' },
     { href: '/search', label: 'Search' },
+    { href: '/portfolio', label: 'Portfolio' },
     { href: '/inbox', label: '📬 Inbox' },
     { href: '/watchlist', label: 'My Watchlist' },
 ];

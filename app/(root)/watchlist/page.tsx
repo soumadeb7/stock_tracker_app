@@ -5,6 +5,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSession } from '@/lib/better-auth/client';
 import { useRouter } from 'next/navigation';
 import WatchlistButton from '@/components/WatchlistButton';
+import dynamic from 'next/dynamic';
+import { toast } from 'sonner';
+
+const BuyModal = dynamic(() => import('@/components/trading/BuyModal'));
 
 type WatchlistItem = {
     symbol: string;
@@ -19,6 +23,8 @@ export default function WatchlistPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [search, setSearch] = useState('');
+    const [modalOpen, setModalOpen] = useState(false);
+    const [selected, setSelected] = useState<{ symbol: string; company?: string } | null>(null);
 
     useEffect(() => {
         if (!isPending && !session?.user) {
@@ -183,21 +189,41 @@ export default function WatchlistPage() {
                                 </Link>
                             </div>
 
-                            <WatchlistButton
-                                symbol={item.symbol}
-                                company={item.company}
-                                isInWatchlist={true}
-                                showTrashIcon
-                                onWatchlistChange={(symbol, isNowInWatchlist) => {
-                                    if (!isNowInWatchlist) {
-                                        setItems((prev) => prev.filter((x) => x.symbol !== symbol));
-                                    }
-                                }}
-                            />
+                                            <div className="flex items-center gap-2">
+                                                <WatchlistButton
+                                                    symbol={item.symbol}
+                                                    company={item.company}
+                                                    isInWatchlist={true}
+                                                    showTrashIcon
+                                                    onWatchlistChange={(symbol, isNowInWatchlist) => {
+                                                        if (!isNowInWatchlist) {
+                                                            setItems((prev) => prev.filter((x) => x.symbol !== symbol));
+                                                        }
+                                                    }}
+                                                />
+
+                                                <button
+                                                    className="px-3 h-9 rounded bg-green-600 text-white text-sm"
+                                                    onClick={() => {
+                                                        // open Buy modal for this symbol
+                                                        setSelected({ symbol: item.symbol, company: item.company });
+                                                        setModalOpen(true);
+                                                    }}
+                                                >
+                                                    Buy
+                                                </button>
+                                            </div>
                         </article>
                     ))}
                 </div>
             )}
+            
+                        <BuyModal
+                            open={modalOpen}
+                            symbol={selected?.symbol || ''}
+                            company={selected?.company}
+                            onClose={() => setModalOpen(false)}
+                        />
         </section>
     );
 }

@@ -1,4 +1,5 @@
 import TradingViewWidget from "@/components/TradingViewWidget";
+import StockTradePanel from "@/components/trading/StockTradePanel";
 import WatchlistButton from "@/components/WatchlistButton";
 import {
   SYMBOL_INFO_WIDGET_CONFIG,
@@ -41,6 +42,8 @@ export default async function StockDetails({ params }: StockDetailsPageProps) {
 
         {/* Right column */}
         <div className="flex flex-col gap-6">
+          <StockTradePanel symbol={symbol.toUpperCase()} assetName={symbol.toUpperCase()} />
+
           <div className="flex items-center justify-between">
             <WatchlistButton symbol={symbol.toUpperCase()} company={symbol.toUpperCase()} isInWatchlist={false} />
           </div>
